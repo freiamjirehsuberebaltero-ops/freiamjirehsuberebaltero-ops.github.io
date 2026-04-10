@@ -1,12 +1,13 @@
 """Installation manager tab – scan installations, view mods, update/remove."""
 
-import threading
 from pathlib import Path
 from typing import List, Optional
 
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject
 from PyQt5.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -20,7 +21,6 @@ from PyQt5.QtWidgets import (
     QWidget,
     QHeaderView,
     QProgressBar,
-    QComboBox,
 )
 
 from core.minecraft_detector import MinecraftDetector, MinecraftInstallation
@@ -40,21 +40,13 @@ class ScanWorker(QObject):
         self._detector = detector
 
     def run(self) -> None:
-        print("\n" + "="*60)
-        print("🚀 ScanWorker.run() STARTED")
-        print("="*60)
         try:
-            print("\n📡 Calling detector.find_installations()...")
             results = self._detector.find_installations()
-            print(f"\n✅ ScanWorker got {len(results)} results")
             self.done.emit(results)
         except Exception as exc:
-            print(f"\n❌ ScanWorker EXCEPTION: {exc}")
-            import traceback
-            traceback.print_exc()
+            logger.error("Scan failed: %s", exc)
+            self.done.emit([])
         finally:
-            print("\n🏁 ScanWorker.run() FINISHED")
-            print("="*60 + "\n")
             self.finished.emit()
 
 
@@ -70,9 +62,70 @@ class UpdateCheckWorker(QObject):
         self._loader = loader
 
     def run(self) -> None:
-        updates = self._manager.check_for_updates(self._mods, self._mc_ver, self._loader)
-        self.done.emit(updates)
-        self.finished.emit()
+        try:
+            updates = self._manager.check_for_updates(self._mods, self._mc_ver, self._loader)
+            self.done.emit(updates)
+        except Exception as exc:
+            logger.error("Update check failed: %s", exc)
+            self.done.emit([])
+        finally:
+            self.finished.emit()
+
+
+class UpdateSelectionDialog(QDialog):
+    """Let the user choose which available updates to apply."""
+
+    def __init__(self, updates: list, parent: QWidget = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Updates Available")
+        self.setMinimumWidth(520)
+        self._updates = updates
+        self._chosen: List[int] = []
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.addWidget(
+            QLabel(f"{len(self._updates)} update(s) available. Select which mods to update:")
+        )
+
+        self._list = QListWidget()
+        self._list.setSelectionMode(QAbstractItemView.MultiSelection)
+        for u in self._updates:
+            self._list.addItem(
+                QListWidgetItem(
+                    f"{u['current_filename']}  →  {u['new_version'].filename}"
+                )
+            )
+        self._list.selectAll()
+        layout.addWidget(self._list)
+
+        btns = QHBoxLayout()
+        update_sel_btn = QPushButton("Update Selected")
+        update_sel_btn.clicked.connect(self._accept_selected)
+        update_all_btn = QPushButton("Update All")
+        update_all_btn.clicked.connect(self._accept_all)
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(update_sel_btn)
+        btns.addWidget(update_all_btn)
+        btns.addStretch()
+        btns.addWidget(cancel_btn)
+        layout.addLayout(btns)
+
+    def _accept_selected(self) -> None:
+        self._chosen = [idx.row() for idx in self._list.selectedIndexes()]
+        if not self._chosen:
+            QMessageBox.warning(self, "No Selection", "Please select at least one mod to update.")
+            return
+        self.accept()
+
+    def _accept_all(self) -> None:
+        self._chosen = list(range(len(self._updates)))
+        self.accept()
+
+    def chosen_updates(self) -> list:
+        return [self._updates[i] for i in self._chosen]
 
 
 class InstallationManagerPanel(QWidget):
@@ -125,10 +178,21 @@ class InstallationManagerPanel(QWidget):
         left_vbox.addWidget(self._install_list)
         splitter.addWidget(left)
 
-        # Right: mods in selected installation
+        # Right: mods and version selector
         right = QWidget()
         right_vbox = QVBoxLayout(right)
         right_vbox.setContentsMargins(0, 0, 0, 0)
+
+        # Version selector row
+        ver_row = QHBoxLayout()
+        ver_row.addWidget(QLabel("Minecraft version:"))
+        self._version_combo = QComboBox()
+        self._version_combo.setMinimumWidth(160)
+        self._version_combo.setToolTip("Select the Minecraft version to check updates against")
+        ver_row.addWidget(self._version_combo)
+        ver_row.addStretch()
+        right_vbox.addLayout(ver_row)
+
         right_vbox.addWidget(QLabel("Installed Mods:"))
 
         self._mods_table = QTableWidget(0, 2)
@@ -167,53 +231,48 @@ class InstallationManagerPanel(QWidget):
         self._progress_bar.setVisible(True)
         self._install_list.clear()
 
-        
         thread = QThread(self)
         worker = ScanWorker(detector)
-        print("🚀 ScanWorker created", worker)  # worker thread debug
         worker.moveToThread(thread)
-        print("🔄 Worker moved to thread", thread)  # thread assignment debug
         thread.started.connect(worker.run)
-        print("🔄 Thread started, connecting signals...")
         worker.done.connect(self._on_scan_done)
-        print("🔄 Worker done signal connected")
         worker.finished.connect(thread.quit)
-        print("🔄 Worker finished signal connected")
         worker.finished.connect(lambda: self._scan_btn.setEnabled(True))
-        print("🔄 Worker finished signal connected to enable scan button")
         worker.finished.connect(lambda: self._progress_bar.setVisible(False))
-        print("🔄 Worker finished signal connected to hide progress bar")
         thread.finished.connect(thread.deleteLater)
-        print("🔄 Thread finished signal connected to delete thread")
         self._threads.append(thread)
-        print("🔄 Thread added to threads list")
         thread.start()
-        print("🚀 ScanWorker thread started")
 
     def _on_scan_done(self, installations: List[MinecraftInstallation]) -> None:
         self._installations = installations
-        print(f"🚀 Scan done with {len(installations)} installations found")  # debug
         self._install_list.clear()
-        print("🚀 Clearing installation list")
         if not installations:
             self._status_label.setText("No Minecraft installations found.")
             return
         for inst in installations:
-            print(f"🚀 Found installation: {inst.path}")  # debug
             loader_str = f" [{inst.mod_loader}]" if inst.mod_loader else ""
-            label = f"{inst.path.name}{loader_str}"
-            item = QListWidgetItem(label)
+            item = QListWidgetItem(f"{inst.path.name}{loader_str}")
             item.setToolTip(str(inst.path))
             self._install_list.addItem(item)
-            print(f"🚀 Adding installation to list: {inst.path}")  # debug
         self._status_label.setText(f"Found {len(installations)} installation(s).")
-        print("🚀 Installation list populated")  # debug
+        # Auto-select if there is exactly one
+        if len(installations) == 1:
+            self._install_list.setCurrentRow(0)
 
     def _on_install_selected(self, row: int) -> None:
         if row < 0 or row >= len(self._installations):
             return
         inst = self._installations[row]
         self._current_install = inst
+
+        # Populate version combo with this installation's versions
+        self._version_combo.clear()
+        for ver in inst.versions:
+            self._version_combo.addItem(ver)
+        # Default to the last (newest) version
+        if inst.versions:
+            self._version_combo.setCurrentIndex(len(inst.versions) - 1)
+
         detector = MinecraftDetector()
         self._installed_mods = detector.get_installed_mods(inst)
         self._refresh_mods_table()
@@ -227,14 +286,12 @@ class InstallationManagerPanel(QWidget):
             row = self._mods_table.rowCount()
             self._mods_table.insertRow(row)
             self._mods_table.setItem(row, 0, QTableWidgetItem(mod["filename"]))
-            size_kb = f"{mod['size'] / 1024:.1f}"
-            self._mods_table.setItem(row, 1, QTableWidgetItem(size_kb))
+            self._mods_table.setItem(row, 1, QTableWidgetItem(f"{mod['size'] / 1024:.1f}"))
 
     def _do_remove(self) -> None:
         rows = {idx.row() for idx in self._mods_table.selectedIndexes()}
         if not rows:
             return
-        backup = self._settings.get("backup_before_update", True)
         result = QMessageBox.question(
             self,
             "Remove Mods",
@@ -242,10 +299,10 @@ class InstallationManagerPanel(QWidget):
         )
         if result != QMessageBox.Yes:
             return
+        backup = self._settings.get("backup_before_update", True)
         for row in sorted(rows, reverse=True):
             mod_info = self._installed_mods[row]
             self._manager.remove_mod(Path(mod_info["path"]), backup=backup)
-        # Refresh
         if self._current_install:
             detector = MinecraftDetector()
             self._installed_mods = detector.get_installed_mods(self._current_install)
@@ -256,15 +313,15 @@ class InstallationManagerPanel(QWidget):
         if not self._current_install:
             QMessageBox.information(self, "Update Check", "Please select an installation first.")
             return
-        mc_ver = (
-            self._current_install.versions[-1]
-            if self._current_install.versions
-            else self._settings.get("default_mc_version", "")
-        )
+        if not self._installed_mods:
+            QMessageBox.information(self, "Update Check", "No mods found in the mods folder.")
+            return
+
+        mc_ver = self._version_combo.currentText() or self._settings.get("default_mc_version", "")
         loader = self._current_install.mod_loader or self._settings.get("default_mod_loader", "")
 
         self._update_check_btn.setEnabled(False)
-        self._status_label.setText("Checking for updates…")
+        self._status_label.setText(f"Checking for updates against Minecraft {mc_ver}…")
 
         thread = QThread(self)
         worker = UpdateCheckWorker(self._manager, self._installed_mods, mc_ver, loader)
@@ -282,25 +339,27 @@ class InstallationManagerPanel(QWidget):
             self._status_label.setText("All mods are up to date.")
             QMessageBox.information(self, "Update Check", "All mods are up to date!")
             return
-        lines = [
-            f"  • {u['current_filename']} → {u['new_version'].filename}"
-            for u in updates
-        ]
-        msg = f"{len(updates)} update(s) available:\n" + "\n".join(lines)
+
         self._status_label.setText(f"{len(updates)} update(s) available.")
-        result = QMessageBox.question(self, "Updates Available", msg + "\n\nUpdate all?")
-        if result != QMessageBox.Yes:
+        dialog = UpdateSelectionDialog(updates, parent=self)
+        if dialog.exec_() != QDialog.Accepted:
             return
+
+        chosen = dialog.chosen_updates()
+        if not chosen:
+            return
+
         backup = self._settings.get("backup_before_update", True)
-        for u in updates:
+        for u in chosen:
             self._manager.update_mod(
                 Path(u["current_path"]),
                 u["new_version"],
                 Path(u["current_path"]).parent,
                 backup=backup,
             )
+
         if self._current_install:
             detector = MinecraftDetector()
             self._installed_mods = detector.get_installed_mods(self._current_install)
             self._refresh_mods_table()
-        self._status_label.setText("Mods updated.")
+        self._status_label.setText(f"Updated {len(chosen)} mod(s).")
