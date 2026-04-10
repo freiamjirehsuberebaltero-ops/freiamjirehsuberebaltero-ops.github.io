@@ -120,6 +120,7 @@ class ModBrowserPanel(QWidget):
         self._versions: List[ModVersion] = []
         self._search_results: List[ModInfo] = []
         self._threads: List[QThread] = []
+        self._workers: List[object] = []  # keep strong refs to prevent GC
         self._build_ui()
 
     # ------------------------------------------------------------------
@@ -240,16 +241,23 @@ class ModBrowserPanel(QWidget):
         self._results_list.clear()
         self._status_label.setText("Searching…")
 
+        # Hint if CurseForge is selected but has no API key
+        if source in ("curseforge", "both") and not self._settings.get("curseforge_api_key", ""):
+            self._status_label.setText(
+                "Searching… (CurseForge requires an API key – configure it in Settings)"
+            )
+
         thread = QThread(self)
         worker = SearchWorker(self._manager, query, mc_ver, loader, source)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.results_ready.connect(self._on_search_results)
-        worker.error.connect(lambda e: self._status_label.setText(f"Error: {e}"))
+        worker.error.connect(self._on_search_error)
         worker.finished.connect(thread.quit)
         worker.finished.connect(lambda: self._search_btn.setEnabled(True))
         thread.finished.connect(thread.deleteLater)
         self._threads.append(thread)
+        self._workers.append(worker)  # prevent GC while thread runs
         thread.start()
 
     def _on_search_results(self, results: List[ModInfo]) -> None:
@@ -259,7 +267,23 @@ class ModBrowserPanel(QWidget):
             item = QListWidgetItem(f"[{mod.source}] {mod.name}")
             item.setToolTip(mod.summary)
             self._results_list.addItem(item)
-        self._status_label.setText(f"Found {len(results)} result(s).")
+        if results:
+            self._status_label.setText(f"Found {len(results)} result(s).")
+        else:
+            hint = ""
+            source = self._source_combo.currentText()
+            if source in ("curseforge", "both") and not self._settings.get("curseforge_api_key", ""):
+                hint = " (CurseForge skipped – no API key; configure in Settings)"
+            self._status_label.setText(f"No results found.{hint}")
+
+    def _on_search_error(self, error_msg: str) -> None:
+        self._status_label.setText(f"Search failed: {error_msg}")
+        QMessageBox.warning(
+            self,
+            "Search Error",
+            f"The search could not be completed:\n\n{error_msg}\n\n"
+            "Please check your internet connection and API keys in Settings.",
+        )
 
     def _on_result_selected(self, row: int) -> None:
         if row < 0 or row >= len(self._search_results):
@@ -296,6 +320,7 @@ class ModBrowserPanel(QWidget):
         worker.finished.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
         self._threads.append(thread)
+        self._workers.append(worker)  # prevent GC while thread runs
         thread.start()
 
     def _on_versions_ready(self, versions: List[ModVersion]) -> None:
@@ -353,6 +378,7 @@ class ModBrowserPanel(QWidget):
         worker.finished.connect(lambda ok, msg: thread.quit())
         thread.finished.connect(thread.deleteLater)
         self._threads.append(thread)
+        self._workers.append(worker)  # prevent GC while thread runs
         thread.start()
 
     def _on_install_progress(self, downloaded: int, total: int) -> None:

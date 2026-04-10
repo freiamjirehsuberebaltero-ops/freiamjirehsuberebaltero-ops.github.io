@@ -57,20 +57,18 @@ class CurseForgeAPI(BaseAPI):
             "classId": CURSEFORGE_MODS_CLASS_ID,
             "searchFilter": query,
             "index": page * page_size,
-            "pageSize": page_size,
+            "pageSize": min(page_size, 50),  # CurseForge max is 50
         }
         if game_version:
             params["gameVersion"] = game_version
-        loader_id = _LOADER_IDS.get(mod_loader.lower())
-        if loader_id:
-            params["modLoaderType"] = loader_id
+            # Per CurseForge docs: modLoaderType MUST be coupled with gameVersion
+            loader_id = _LOADER_IDS.get(mod_loader.lower())
+            if loader_id:
+                params["modLoaderType"] = loader_id
 
-        try:
-            resp = self._get(f"{CURSEFORGE_BASE_URL}/mods/search", params=params)
-            data = resp.json()
-        except Exception as exc:
-            logger.error("CurseForge search error: %s", exc)
-            return []
+        # Let exceptions propagate so callers can show proper error messages
+        resp = self._get(f"{CURSEFORGE_BASE_URL}/mods/search", params=params)
+        data = resp.json()
 
         results: List[ModInfo] = []
         for mod in data.get("data", []):
@@ -89,9 +87,10 @@ class CurseForgeAPI(BaseAPI):
         params: Dict[str, Any] = {}
         if game_version:
             params["gameVersion"] = game_version
-        loader_id = _LOADER_IDS.get(mod_loader.lower())
-        if loader_id:
-            params["modLoaderType"] = loader_id
+            # Per docs: modLoaderType must be coupled with gameVersion
+            loader_id = _LOADER_IDS.get(mod_loader.lower())
+            if loader_id:
+                params["modLoaderType"] = loader_id
 
         try:
             resp = self._get(f"{CURSEFORGE_BASE_URL}/mods/{mod_id}/files", params=params)

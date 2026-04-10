@@ -46,16 +46,41 @@ class ModManager:
         page: int = 0,
         page_size: int = 20,
     ) -> List[ModInfo]:
-        """Search for mods across one or both platforms."""
+        """Search for mods across one or both platforms.
+
+        If one platform fails, its error is logged and results from the
+        other platform are still returned.  If **all** enabled platforms
+        fail, the last exception is re-raised so the GUI can show it.
+        """
         results: List[ModInfo] = []
+        last_exc: Optional[Exception] = None
+        sources_tried = 0
+
         if source in ("modrinth", "both"):
-            results += self._modrinth.search_mods(
-                query, game_version, mod_loader, page, page_size
-            )
+            sources_tried += 1
+            try:
+                results += self._modrinth.search_mods(
+                    query, game_version, mod_loader, page, page_size
+                )
+            except Exception as exc:
+                logger.error("Modrinth search failed: %s", exc)
+                last_exc = exc
+
         if source in ("curseforge", "both"):
-            results += self._curseforge.search_mods(
-                query, game_version, mod_loader, page, page_size
-            )
+            sources_tried += 1
+            try:
+                cf_results = self._curseforge.search_mods(
+                    query, game_version, mod_loader, page, page_size
+                )
+                results += cf_results
+            except Exception as exc:
+                logger.error("CurseForge search failed: %s", exc)
+                last_exc = exc
+
+        # If every source raised an exception (no partial results at all), tell the
+        # caller so it can surface a proper error message to the user.
+        if not results and last_exc is not None and sources_tried > 0:
+            raise last_exc
         # De-duplicate by (source, id)
         seen: set = set()
         unique: List[ModInfo] = []

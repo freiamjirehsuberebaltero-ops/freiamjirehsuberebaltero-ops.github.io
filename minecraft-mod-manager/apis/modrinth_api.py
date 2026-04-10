@@ -1,5 +1,6 @@
 """Modrinth API integration."""
 
+import json as _json
 from typing import Any, Dict, List, Optional
 
 from .base_api import BaseAPI, ModInfo, ModVersion
@@ -36,8 +37,6 @@ class ModrinthAPI(BaseAPI):
         if mod_loader:
             facets.append([f"categories:{mod_loader.lower()}"])
 
-        import json as _json
-
         params: Dict[str, Any] = {
             "query": query,
             "facets": _json.dumps(facets),
@@ -45,12 +44,9 @@ class ModrinthAPI(BaseAPI):
             "limit": page_size,
         }
 
-        try:
-            resp = self._get(f"{MODRINTH_BASE_URL}/search", params=params)
-            data = resp.json()
-        except Exception as exc:
-            logger.error("Modrinth search error: %s", exc)
-            return []
+        # Let exceptions propagate so callers can show proper error messages
+        resp = self._get(f"{MODRINTH_BASE_URL}/search", params=params)
+        data = resp.json()
 
         results: List[ModInfo] = []
         for hit in data.get("hits", []):
@@ -65,19 +61,17 @@ class ModrinthAPI(BaseAPI):
     ) -> List[ModVersion]:
         params: Dict[str, Any] = {}
         if game_version:
-            params["game_versions"] = f'["{game_version}"]'
+            # Modrinth expects a JSON-encoded array in the query string
+            params["game_versions"] = _json.dumps([game_version])
         if mod_loader:
-            params["loaders"] = f'["{mod_loader.lower()}"]'
+            params["loaders"] = _json.dumps([mod_loader.lower()])
 
-        try:
-            resp = self._get(
-                f"{MODRINTH_BASE_URL}/project/{mod_id}/version",
-                params=params,
-            )
-            versions_data = resp.json()
-        except Exception as exc:
-            logger.error("Modrinth get_versions error: %s", exc)
-            return []
+        # Let exceptions propagate so callers can show proper error messages
+        resp = self._get(
+            f"{MODRINTH_BASE_URL}/project/{mod_id}/version",
+            params=params,
+        )
+        versions_data = resp.json()
 
         versions: List[ModVersion] = []
         for v in versions_data:
