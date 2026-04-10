@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -89,6 +90,30 @@ class SettingsPanel(QWidget):
 
         root.addWidget(behaviour_group)
 
+        # --- Custom Minecraft Directories ---
+        dirs_group = QGroupBox("Custom Minecraft Directories")
+        dirs_vbox = QVBoxLayout(dirs_group)
+
+        dirs_vbox.addWidget(QLabel(
+            "Add extra .minecraft folders to scan (e.g. TLauncher installs):"
+        ))
+
+        self._dirs_list = QListWidget()
+        self._dirs_list.setFixedHeight(100)
+        dirs_vbox.addWidget(self._dirs_list)
+
+        dir_btn_row = QHBoxLayout()
+        self._add_dir_btn = QPushButton("Browse…")
+        self._add_dir_btn.clicked.connect(self._browse_dir)
+        self._remove_dir_btn = QPushButton("Remove Selected")
+        self._remove_dir_btn.clicked.connect(self._remove_dir)
+        dir_btn_row.addWidget(self._add_dir_btn)
+        dir_btn_row.addWidget(self._remove_dir_btn)
+        dir_btn_row.addStretch()
+        dirs_vbox.addLayout(dir_btn_row)
+
+        root.addWidget(dirs_group)
+
         # --- Buttons ---
         btn_row = QHBoxLayout()
         self._save_btn = QPushButton("Save Settings")
@@ -130,7 +155,15 @@ class SettingsPanel(QWidget):
         self._max_backups_spin.setValue(int(s.get("max_backups", 5)))
         self._threads_spin.setValue(int(s.get("download_threads", 4)))
 
+        self._dirs_list.clear()
+        for d in s.get("minecraft_dirs", []):
+            self._dirs_list.addItem(d)
+
     def _save(self) -> None:
+        minecraft_dirs = [
+            self._dirs_list.item(i).text()
+            for i in range(self._dirs_list.count())
+        ]
         self._settings.update(
             {
                 "curseforge_api_key": self._cf_key_edit.text().strip(),
@@ -141,6 +174,7 @@ class SettingsPanel(QWidget):
                 "backup_before_update": self._backup_cb.isChecked(),
                 "max_backups": self._max_backups_spin.value(),
                 "download_threads": self._threads_spin.value(),
+                "minecraft_dirs": minecraft_dirs,
             }
         )
         QMessageBox.information(self, "Settings", "Settings saved successfully.")
@@ -150,3 +184,28 @@ class SettingsPanel(QWidget):
         self._settings.update(DEFAULT_SETTINGS)
         self._load_values()
         QMessageBox.information(self, "Settings", "Settings reset to defaults.")
+
+    def _browse_dir(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Minecraft Directory",
+            "",
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        )
+        if not folder:
+            return
+        existing = [
+            self._dirs_list.item(i).text()
+            for i in range(self._dirs_list.count())
+        ]
+        if folder in existing:
+            QMessageBox.information(self, "Custom Directories", "That directory is already in the list.")
+            return
+        self._dirs_list.addItem(folder)
+
+    def _remove_dir(self) -> None:
+        selected = self._dirs_list.selectedItems()
+        if not selected:
+            return
+        for item in selected:
+            self._dirs_list.takeItem(self._dirs_list.row(item))

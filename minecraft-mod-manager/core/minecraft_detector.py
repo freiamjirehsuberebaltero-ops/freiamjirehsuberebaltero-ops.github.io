@@ -89,7 +89,11 @@ class MinecraftDetector:
         if system == "win32":
             appdata = os.environ.get("APPDATA", "")
             if appdata:
+                # Standard Minecraft / TLauncher default location
                 candidates.append(Path(appdata) / ".minecraft")
+                # TLauncher can also write to a dedicated subfolder
+                candidates.append(Path(appdata) / ".tlauncher" / ".minecraft")
+                candidates.append(Path(appdata) / "TLauncher" / ".minecraft")
             # Launcher installs in Program Files
             for pf in ("ProgramFiles", "ProgramFiles(x86)"):
                 pf_path = os.environ.get(pf, "")
@@ -127,8 +131,12 @@ class MinecraftDetector:
         """Return a MinecraftInstallation if *path* looks like a .minecraft dir."""
         if not path.is_dir():
             return None
-        # Must have at least a 'versions' or 'mods' subdirectory
-        if not (path / "versions").is_dir() and not (path / "mods").is_dir():
+        # Accept folders that have at least one known Minecraft subdirectory.
+        # TLauncher (and other launchers) may not create 'mods' until a mod is
+        # installed, and some setups use non-standard version folder layouts, so
+        # we check a broader set of well-known subdirectory names.
+        known_subdirs = ("versions", "mods", "saves", "resourcepacks", "shaderpacks", "screenshots")
+        if not any((path / sub).is_dir() for sub in known_subdirs):
             return None
 
         versions = self._detect_versions(path)
