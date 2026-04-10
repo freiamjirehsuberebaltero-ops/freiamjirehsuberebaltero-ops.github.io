@@ -265,13 +265,20 @@ class InstallationManagerPanel(QWidget):
         inst = self._installations[row]
         self._current_install = inst
 
-        # Populate version combo with this installation's versions
+        # Populate version combo using rich version details (name + type)
         self._version_combo.clear()
-        for ver in inst.versions:
-            self._version_combo.addItem(ver)
-        # Default to the last (newest) version
-        if inst.versions:
-            self._version_combo.setCurrentIndex(len(inst.versions) - 1)
+        if inst.version_details:
+            for vd in inst.version_details:
+                label = f"{vd['name']} ({vd['type']})"
+                self._version_combo.addItem(label, userData=vd["name"])
+            # Default to the last (newest) entry
+            self._version_combo.setCurrentIndex(len(inst.version_details) - 1)
+        else:
+            # Fallback to plain name list
+            for ver in inst.versions:
+                self._version_combo.addItem(ver, userData=ver)
+            if inst.versions:
+                self._version_combo.setCurrentIndex(len(inst.versions) - 1)
 
         detector = MinecraftDetector()
         self._installed_mods = detector.get_installed_mods(inst)
@@ -317,7 +324,12 @@ class InstallationManagerPanel(QWidget):
             QMessageBox.information(self, "Update Check", "No mods found in the mods folder.")
             return
 
-        mc_ver = self._version_combo.currentText() or self._settings.get("default_mc_version", "")
+        # Use userData (plain version name) if set, otherwise fall back to display text
+        mc_ver = (
+            self._version_combo.currentData()
+            or self._version_combo.currentText()
+            or self._settings.get("default_mc_version", "")
+        )
         loader = self._current_install.mod_loader or self._settings.get("default_mod_loader", "")
 
         self._update_check_btn.setEnabled(False)

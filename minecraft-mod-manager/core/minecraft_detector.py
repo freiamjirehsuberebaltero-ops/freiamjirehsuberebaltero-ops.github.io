@@ -1,5 +1,6 @@
 """Detect Minecraft installations across platforms."""
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -10,6 +11,52 @@ from utils.logger import get_logger
 logger = get_logger("minecraft_detector")
 
 
+class MinecraftVersionScanner:
+    """Scan a .minecraft/versions directory and return rich version metadata."""
+
+    def __init__(self, minecraft_path: Optional[Path] = None) -> None:
+        if minecraft_path is None:
+            self.minecraft_path = Path.home() / "AppData" / "Roaming" / ".minecraft"
+        else:
+            self.minecraft_path = Path(minecraft_path)
+
+    def scan_versions(self) -> List[Dict]:
+        """Return a sorted list of version dicts for every installed version."""
+        versions_dir = self.minecraft_path / "versions"
+        if not versions_dir.exists():
+            return []
+        versions: List[Dict] = []
+        try:
+            for folder in versions_dir.iterdir():
+                if folder.is_dir():
+                    info = self._get_version_info(folder)
+                    if info:
+                        versions.append(info)
+        except OSError:
+            return []
+        return sorted(versions, key=lambda x: x["name"])
+
+    def _get_version_info(self, version_path: Path) -> Dict:
+        version_name = version_path.name
+        json_file = version_path / f"{version_name}.json"
+        info: Dict = {
+            "name": version_name,
+            "path": str(version_path),
+            "has_json": json_file.exists(),
+            "type": "Unknown",
+            "id": version_name,
+        }
+        if json_file.exists():
+            try:
+                with open(json_file, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                info["type"] = data.get("type", "Unknown")
+                info["id"] = data.get("id", version_name)
+            except (OSError, json.JSONDecodeError):
+                pass
+        return info
+
+
 class MinecraftInstallation:
     """Represents a single Minecraft installation directory."""
 
@@ -17,11 +64,14 @@ class MinecraftInstallation:
         self,
         path: Path,
         versions: Optional[List[str]] = None,
+        version_details: Optional[List[Dict]] = None,
         mod_loader: str = "",
         mods_dir: Optional[Path] = None,
     ) -> None:
         self.path = path
-        self.versions = versions or []
+        self.version_details: List[Dict] = version_details or []
+        # Plain name list kept for backward compatibility
+        self.versions: List[str] = versions or [v["name"] for v in self.version_details]
         self.mod_loader = mod_loader
         self.mods_dir = mods_dir or (path / "mods")
 
@@ -152,26 +202,18 @@ class MinecraftDetector:
         return None
 
     def _build_installation(self, path: Path) -> MinecraftInstallation:
+        scanner = MinecraftVersionScanner(path)
+        version_details = scanner.scan_versions()
         return MinecraftInstallation(
             path=path,
-            versions=self._detect_versions(path),
+            version_details=version_details,
             mod_loader=self._detect_loader(path),
             mods_dir=path / "mods",
         )
 
     def _detect_versions(self, mc_dir: Path) -> List[str]:
-        """List installed Minecraft version folders."""
-        versions_dir = mc_dir / "versions"
-        if not versions_dir.is_dir():
-            return []
-        versions: List[str] = []
-        try:
-            for entry in sorted(versions_dir.iterdir()):
-                if entry.is_dir():
-                    versions.append(entry.name)
-        except OSError:
-            pass
-        return versions
+        """Kept for any callers outside MinecraftDetector; delegates to MinecraftVersionScanner."""
+        return [v["name"] for v in MinecraftVersionScanner(mc_dir).scan_versions()]
 
     def _detect_loader(self, mc_dir: Path) -> str:
         """Heuristically detect the active mod loader for this installation."""
