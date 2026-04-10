@@ -58,6 +58,8 @@ class CurseForgeAPI(BaseAPI):
             "searchFilter": query,
             "index": page * page_size,
             "pageSize": min(page_size, 50),  # CurseForge max is 50
+            "sortField": 2,  # 2 = Popularity (downloads), 3 = Last Updated, 0 = Relevance
+            "sortOrder": "desc",  # Descending order
         }
         if game_version:
             params["gameVersion"] = game_version
@@ -120,10 +122,19 @@ class CurseForgeAPI(BaseAPI):
     # ------------------------------------------------------------------
 
     def _parse_mod(self, data: Dict[str, Any]) -> ModInfo:
+        """Parse a mod from CurseForge search or detail response."""
         authors = ", ".join(a.get("name", "") for a in data.get("authors", []))
         latest_files = data.get("latestFilesIndexes", [])
         game_versions = list({f.get("gameVersion", "") for f in latest_files})
-        mod_loaders = list({f.get("modLoader", "") for f in latest_files if f.get("modLoader")})
+        
+        # Extract loader names from gameVersions in latest files
+        mod_loaders = []
+        for f in latest_files:
+            for gv in f.get("gameVersions", []):
+                if gv in ("Forge", "Fabric", "Quilt", "NeoForge"):
+                    mod_loaders.append(gv)
+        mod_loaders = list(dict.fromkeys(mod_loaders))  # Remove duplicates while preserving order
+        
         slug = data.get("slug", "")
         return ModInfo(
             id=str(data.get("id", "")),
@@ -141,6 +152,7 @@ class CurseForgeAPI(BaseAPI):
         )
 
     def _parse_file(self, f: Dict[str, Any], mod_id: str) -> ModVersion:
+        """Parse a file/version from CurseForge."""
         deps = [
             {
                 "mod_id": str(d.get("modId", "")),
@@ -148,6 +160,13 @@ class CurseForgeAPI(BaseAPI):
             }
             for d in f.get("dependencies", [])
         ]
+        
+        # Extract mod loaders from gameVersions
+        mod_loaders = [
+            gv for gv in f.get("gameVersions", [])
+            if gv in ("Forge", "Fabric", "Quilt", "NeoForge")
+        ]
+        
         return ModVersion(
             id=str(f.get("id", "")),
             mod_id=str(mod_id),
@@ -157,10 +176,7 @@ class CurseForgeAPI(BaseAPI):
             download_url=f.get("downloadUrl", ""),
             filename=f.get("fileName", ""),
             game_versions=f.get("gameVersions", []),
-            mod_loaders=[
-                gv for gv in f.get("gameVersions", [])
-                if gv in ("Forge", "Fabric", "Quilt", "NeoForge")
-            ],
+            mod_loaders=mod_loaders,
             dependencies=deps,
             date_published=f.get("fileDate", ""),
             source=self.SOURCE,

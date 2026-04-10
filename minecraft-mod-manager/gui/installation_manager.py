@@ -40,9 +40,22 @@ class ScanWorker(QObject):
         self._detector = detector
 
     def run(self) -> None:
-        results = self._detector.find_installations()
-        self.done.emit(results)
-        self.finished.emit()
+        print("\n" + "="*60)
+        print("🚀 ScanWorker.run() STARTED")
+        print("="*60)
+        try:
+            print("\n📡 Calling detector.find_installations()...")
+            results = self._detector.find_installations()
+            print(f"\n✅ ScanWorker got {len(results)} results")
+            self.done.emit(results)
+        except Exception as exc:
+            print(f"\n❌ ScanWorker EXCEPTION: {exc}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            print("\n🏁 ScanWorker.run() FINISHED")
+            print("="*60 + "\n")
+            self.finished.emit()
 
 
 class UpdateCheckWorker(QObject):
@@ -154,31 +167,47 @@ class InstallationManagerPanel(QWidget):
         self._progress_bar.setVisible(True)
         self._install_list.clear()
 
+        
         thread = QThread(self)
         worker = ScanWorker(detector)
+        print("🚀 ScanWorker created", worker)  # worker thread debug
         worker.moveToThread(thread)
+        print("🔄 Worker moved to thread", thread)  # thread assignment debug
         thread.started.connect(worker.run)
+        print("🔄 Thread started, connecting signals...")
         worker.done.connect(self._on_scan_done)
+        print("🔄 Worker done signal connected")
         worker.finished.connect(thread.quit)
+        print("🔄 Worker finished signal connected")
         worker.finished.connect(lambda: self._scan_btn.setEnabled(True))
+        print("🔄 Worker finished signal connected to enable scan button")
         worker.finished.connect(lambda: self._progress_bar.setVisible(False))
+        print("🔄 Worker finished signal connected to hide progress bar")
         thread.finished.connect(thread.deleteLater)
+        print("🔄 Thread finished signal connected to delete thread")
         self._threads.append(thread)
+        print("🔄 Thread added to threads list")
         thread.start()
+        print("🚀 ScanWorker thread started")
 
     def _on_scan_done(self, installations: List[MinecraftInstallation]) -> None:
         self._installations = installations
+        print(f"🚀 Scan done with {len(installations)} installations found")  # debug
         self._install_list.clear()
+        print("🚀 Clearing installation list")
         if not installations:
             self._status_label.setText("No Minecraft installations found.")
             return
         for inst in installations:
+            print(f"🚀 Found installation: {inst.path}")  # debug
             loader_str = f" [{inst.mod_loader}]" if inst.mod_loader else ""
             label = f"{inst.path.name}{loader_str}"
             item = QListWidgetItem(label)
             item.setToolTip(str(inst.path))
             self._install_list.addItem(item)
+            print(f"🚀 Adding installation to list: {inst.path}")  # debug
         self._status_label.setText(f"Found {len(installations)} installation(s).")
+        print("🚀 Installation list populated")  # debug
 
     def _on_install_selected(self, row: int) -> None:
         if row < 0 or row >= len(self._installations):
