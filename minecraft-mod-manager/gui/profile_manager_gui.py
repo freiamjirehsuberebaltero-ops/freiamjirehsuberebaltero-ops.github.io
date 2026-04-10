@@ -112,7 +112,7 @@ class ProfileManagerPanel(QWidget):
 
         right_vbox.addWidget(QLabel("Mods in this Profile:"))
         self._mods_table = QTableWidget(0, 4)
-        self._mods_table.setHorizontalHeaderLabels(["Mod Name", "Version", "Source", "MC Versions"])
+        self._mods_table.setHorizontalHeaderLabels(["Mod Name", "Version", "Source", "Mod ID"])
         self._mods_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self._mods_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._mods_table.setSelectionBehavior(QAbstractItemView.SelectRows)

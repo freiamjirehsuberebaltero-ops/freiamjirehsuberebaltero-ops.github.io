@@ -5,9 +5,6 @@ import os
 from pathlib import Path
 
 
-_loggers: dict = {}
-
-
 def setup_logger(log_dir: Path, level: int = logging.INFO) -> logging.Logger:
     """Configure the root application logger with file and console handlers."""
     log_dir.mkdir(parents=True, exist_ok=True)
