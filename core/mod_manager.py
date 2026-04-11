@@ -2,6 +2,7 @@
 
 import shutil
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -172,32 +173,108 @@ class ModManager:
         installed_mods: List[Dict],
         game_version: str,
         mod_loader: str,
+        timeout: int = 60,
     ) -> List[Dict[str, Any]]:
-        """Compare installed filenames against available versions.
-
-        Returns a list of dicts describing available updates.
+        """Compare installed mods against available versions using smart metadata.
+        
+        Now searches by actual mod name instead of just filename.
+        Includes timeout to prevent hanging.
+        
+        Args:
+            installed_mods: List of mod dicts with mod_name and mod_version
+            game_version: Target Minecraft version (e.g., "1.20.1")
+            mod_loader: Target mod loader (e.g., "Forge", "Fabric")
+            timeout: Maximum time in seconds to spend checking updates
         """
+        logger.info("Starting update check for %d mod(s)...", len(installed_mods))
+        logger.info("Target: Minecraft %s [%s], timeout: %d seconds", game_version, mod_loader, timeout)
+        
         updates: List[Dict[str, Any]] = []
-        for mod_info in installed_mods:
+        start_time = time.time()
+        
+        for idx, mod_info in enumerate(installed_mods, 1):
+            # Check timeout
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                logger.warning(
+                    "Update check timeout! Checked %d/%d mods in %.1f seconds",
+                    idx - 1,
+                    len(installed_mods),
+                    elapsed,
+                )
+                break
+            
             filename = mod_info.get("filename", "")
-            # Very simple heuristic: search by filename stem
-            stem = Path(filename).stem
-            search_results = self._modrinth.search_mods(stem, game_version, mod_loader)
-            if not search_results:
-                continue
-            match = search_results[0]
-            versions = self._modrinth.get_mod_versions(match.id, game_version, mod_loader)
-            if versions:
+            # Use extracted mod_name if available, otherwise fall back to filename stem
+            mod_name = mod_info.get("mod_name", "")
+            mod_version = mod_info.get("mod_version", "N/A")
+            
+            if not mod_name:
+                mod_name = Path(filename).stem
+            
+            time_remaining = timeout - elapsed
+            logger.debug(
+                "Checking update #%d/%d: %s (current: %s, time remaining: %.1f s)",
+                idx,
+                len(installed_mods),
+                mod_name,
+                mod_version,
+                time_remaining,
+            )
+            
+            try:
+                # Search using the actual mod name
+                search_results = self._modrinth.search_mods(mod_name, game_version, mod_loader)
+                if not search_results:
+                    logger.debug("No search results found for: %s", mod_name)
+                    continue
+                
+                match = search_results[0]
+                logger.debug("Found match: %s (ID: %s)", match.name, match.id)
+                
+                versions = self._modrinth.get_mod_versions(match.id, game_version, mod_loader)
+                if not versions:
+                    logger.debug("No versions found for: %s", match.name)
+                    continue
+                
                 latest = versions[0]
-                if latest.filename != filename:
+                logger.debug(
+                    "Latest version: %s (filename: %s)",
+                    latest.version_number,
+                    latest.filename,
+                )
+                
+                # Compare versions - not just filenames
+                if latest.filename != filename and latest.version_number != mod_version:
+                    logger.info(
+                        "Update available for %s: %s -> %s",
+                        mod_name,
+                        mod_version,
+                        latest.version_number,
+                    )
                     updates.append(
                         {
                             "current_path": mod_info.get("path", ""),
                             "current_filename": filename,
+                            "current_mod_name": mod_name,
+                            "current_version": mod_version,
                             "new_version": latest,
                             "mod_info": match,
                         }
                     )
+                else:
+                    logger.debug("No update needed for: %s (already on %s)", mod_name, mod_version)
+            
+            except Exception as e:
+                logger.warning("Error checking %s for updates: %s", mod_name, e)
+                continue
+        
+        elapsed = time.time() - start_time
+        logger.info(
+            "Update check complete: found %d update(s) in %.1f seconds",
+            len(updates),
+            elapsed,
+        )
         return updates
 
     # ------------------------------------------------------------------

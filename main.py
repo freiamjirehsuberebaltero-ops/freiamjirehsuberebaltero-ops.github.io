@@ -17,6 +17,8 @@ from gui.main_window import MainWindow
 from utils.constants import LOGS_DIR
 from utils.logger import setup_logger
 
+from PyQt5.QtGui import QIcon  # Add this import
+
 
 def main() -> int:
     # Bootstrap logger
@@ -30,6 +32,10 @@ def main() -> int:
     app.setApplicationName("Minecraft Mod Manager")
     app.setApplicationVersion("1.0.0")
     app.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    
+    icon_path = os.path.join(_HERE, "assets", "icon.png") 
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
 
     # Launch main window
     window = MainWindow(settings=settings)
