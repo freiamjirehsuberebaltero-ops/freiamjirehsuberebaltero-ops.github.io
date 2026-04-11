@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
 from apis.curseforge_api import CurseForgeAPI
 from apis.modrinth_api import ModrinthAPI
 from config.settings import Settings
+from core.event_bus import get_event_bus
 from core.mod_manager import ModManager
 from core.profile_manager import ProfileManager
 from gui.installation_manager import InstallationManagerPanel
@@ -35,6 +36,7 @@ class MainWindow(QMainWindow):
     def __init__(self, settings: Settings) -> None:
         super().__init__()
         self._settings = settings
+        self._event_bus = get_event_bus()
         self._init_services()
         self._build_ui()
         self._apply_theme()
@@ -71,6 +73,7 @@ class MainWindow(QMainWindow):
         self._browser_panel = ModBrowserPanel(
             manager=self._mod_manager,
             settings=self._settings,
+            event_bus=self._event_bus,
         )
         self._tabs.addTab(self._browser_panel, "🔍 Mod Browser")
 
@@ -78,6 +81,7 @@ class MainWindow(QMainWindow):
         self._install_panel = InstallationManagerPanel(
             manager=self._mod_manager,
             settings=self._settings,
+            event_bus=self._event_bus,
         )
         self._tabs.addTab(self._install_panel, "🎮 Installations")
 
@@ -86,11 +90,15 @@ class MainWindow(QMainWindow):
             profile_manager=self._profile_manager,
             mod_manager=self._mod_manager,
             settings=self._settings,
+            event_bus=self._event_bus,
         )
         self._tabs.addTab(self._profile_panel, "📦 Profiles")
 
         # Settings tab
-        self._settings_panel = SettingsPanel(settings=self._settings)
+        self._settings_panel = SettingsPanel(
+            settings=self._settings,
+            event_bus=self._event_bus,
+        )
         self._tabs.addTab(self._settings_panel, "⚙ Settings")
 
         # Status bar

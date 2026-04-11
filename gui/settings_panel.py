@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
 )
 
 from config.settings import Settings
+from core.event_bus import EventBus
 from utils.constants import MC_VERSIONS, MOD_LOADERS
 from utils.logger import get_logger
 
@@ -28,9 +29,10 @@ logger = get_logger("settings_panel")
 class SettingsPanel(QWidget):
     """Tab for configuring application preferences."""
 
-    def __init__(self, settings: Settings, parent: QWidget = None) -> None:
+    def __init__(self, settings: Settings, event_bus: EventBus = None, parent: QWidget = None) -> None:
         super().__init__(parent)
         self._settings = settings
+        self._event_bus = event_bus
         self._build_ui()
         self._load_values()
 
@@ -69,6 +71,21 @@ class SettingsPanel(QWidget):
         defaults_form.addRow("Preferred API:", self._api_combo)
 
         root.addWidget(defaults_group)
+
+        # --- Mods Directory ---
+        mods_dir_group = QGroupBox("Mods Directory")
+        mods_dir_form = QFormLayout(mods_dir_group)
+
+        mods_dir_row = QHBoxLayout()
+        self._mods_dir_edit = QLineEdit()
+        self._mods_dir_edit.setPlaceholderText("Path to your mods folder (shared with Mod Browser)")
+        self._mods_dir_browse_btn = QPushButton("Browse…")
+        self._mods_dir_browse_btn.clicked.connect(self._browse_mods_dir)
+        mods_dir_row.addWidget(self._mods_dir_edit, 1)
+        mods_dir_row.addWidget(self._mods_dir_browse_btn)
+        mods_dir_form.addRow("Mods Directory:", mods_dir_row)
+
+        root.addWidget(mods_dir_group)
 
         # --- Behaviour ---
         behaviour_group = QGroupBox("Behaviour")
@@ -155,6 +172,8 @@ class SettingsPanel(QWidget):
         self._max_backups_spin.setValue(int(s.get("max_backups", 5)))
         self._threads_spin.setValue(int(s.get("download_threads", 4)))
 
+        self._mods_dir_edit.setText(s.get("mods_directory", ""))
+
         self._dirs_list.clear()
         for d in s.get("minecraft_dirs", []):
             self._dirs_list.addItem(d)
@@ -164,6 +183,8 @@ class SettingsPanel(QWidget):
             self._dirs_list.item(i).text()
             for i in range(self._dirs_list.count())
         ]
+        old_mods_dir = self._settings.get("mods_directory", "")
+        new_mods_dir = self._mods_dir_edit.text().strip()
         self._settings.update(
             {
                 "curseforge_api_key": self._cf_key_edit.text().strip(),
@@ -175,8 +196,12 @@ class SettingsPanel(QWidget):
                 "max_backups": self._max_backups_spin.value(),
                 "download_threads": self._threads_spin.value(),
                 "minecraft_dirs": minecraft_dirs,
+                "mods_directory": new_mods_dir,
             }
         )
+        # Notify other tabs if the mods directory changed
+        if self._event_bus is not None and new_mods_dir != old_mods_dir:
+            self._event_bus.settings_changed.emit("mods_directory")
         QMessageBox.information(self, "Settings", "Settings saved successfully.")
 
     def _reset(self) -> None:
@@ -184,6 +209,16 @@ class SettingsPanel(QWidget):
         self._settings.update(DEFAULT_SETTINGS)
         self._load_values()
         QMessageBox.information(self, "Settings", "Settings reset to defaults.")
+
+    def _browse_mods_dir(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Mods Directory",
+            self._mods_dir_edit.text(),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        )
+        if folder:
+            self._mods_dir_edit.setText(folder)
 
     def _browse_dir(self) -> None:
         folder = QFileDialog.getExistingDirectory(

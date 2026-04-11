@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (
 
 from core.minecraft_detector import MinecraftDetector, MinecraftInstallation
 from core.mod_manager import ModManager
+from core.event_bus import EventBus
 from config.settings import Settings
 from utils.logger import get_logger
 
@@ -167,11 +168,13 @@ class InstallationManagerPanel(QWidget):
         self,
         manager: ModManager,
         settings: Settings,
+        event_bus: EventBus = None,
         parent: QWidget = None,
     ) -> None:
         super().__init__(parent)
         self._manager = manager
         self._settings = settings
+        self._event_bus = event_bus
         self._installations: List[MinecraftInstallation] = []
         self._current_install: Optional[MinecraftInstallation] = None
         self._installed_mods: List[dict] = []
@@ -179,6 +182,10 @@ class InstallationManagerPanel(QWidget):
         self._clean_version_text = ""  # Store clean version number
         logger.debug("InstallationManagerPanel initialized")
         self._build_ui()
+
+        # React to mod_installed signal so the list stays fresh
+        if self._event_bus is not None:
+            self._event_bus.mod_installed.connect(self._on_mod_installed_externally)
 
     # ------------------------------------------------------------------
     # UI
@@ -348,7 +355,10 @@ class InstallationManagerPanel(QWidget):
         detector = MinecraftDetector()
         self._installed_mods = detector.get_installed_mods(inst)
         logger.info("Loaded %d mods from %s", len(self._installed_mods), inst.path)
-        
+
+        # Persist to Settings so Profiles tab can read the list
+        self._sync_installed_mods_to_settings()
+
         self._refresh_mods_table()
         self._status_label.setText(
             f"Loaded {len(self._installed_mods)} mod(s) from {inst.path}"
@@ -463,6 +473,7 @@ class InstallationManagerPanel(QWidget):
             detector = MinecraftDetector()
             self._installed_mods = detector.get_installed_mods(self._current_install)
             logger.debug("Reloaded %d mods after removal", len(self._installed_mods))
+            self._sync_installed_mods_to_settings()
             self._refresh_mods_table()
         self._status_label.setText("Selected mod(s) removed.")
         logger.info("Mod removal complete")
@@ -564,6 +575,48 @@ class InstallationManagerPanel(QWidget):
             detector = MinecraftDetector()
             self._installed_mods = detector.get_installed_mods(self._current_install)
             logger.debug("Reloaded %d mods after update", len(self._installed_mods))
+            self._sync_installed_mods_to_settings()
             self._refresh_mods_table()
         self._status_label.setText(f"Updated {len(chosen)} mod(s).")
         logger.info("Update complete: %d mod(s) updated", len(chosen))
+
+    # ------------------------------------------------------------------
+    # Settings synchronisation & event bus helpers
+    # ------------------------------------------------------------------
+
+    def _sync_installed_mods_to_settings(self) -> None:
+        """Persist the current installed-mods list to Settings and notify peers."""
+        self._settings.set("installed_mods", list(self._installed_mods))
+        logger.debug(
+            "Synced %d installed mod(s) to settings", len(self._installed_mods)
+        )
+        if self._event_bus is not None:
+            self._event_bus.mods_updated.emit()
+
+    def _on_mod_installed_externally(self, mod_name: str, mod_path: str) -> None:
+        """Called when Mod Browser emits mod_installed.
+
+        If the installed mod lives in the same folder as the currently
+        selected installation, reload the mod list so the new entry
+        appears immediately.
+        """
+        logger.info(
+            "mod_installed signal received: name=%s, path=%s", mod_name, mod_path
+        )
+        if self._current_install is None:
+            return
+        if mod_path:
+            try:
+                target = Path(mod_path).resolve()
+                install_root = self._current_install.path.resolve()
+                # Refresh if the installed-mod path is inside this installation
+                if target == install_root / "mods" or target.is_relative_to(install_root):
+                    detector = MinecraftDetector()
+                    self._installed_mods = detector.get_installed_mods(self._current_install)
+                    self._sync_installed_mods_to_settings()
+                    self._refresh_mods_table()
+                    self._status_label.setText(
+                        f"Refreshed – {len(self._installed_mods)} mod(s) installed."
+                    )
+            except Exception as exc:
+                logger.warning("Could not check path relativity: %s", exc)

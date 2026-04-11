@@ -26,6 +26,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "preferred_api": "modrinth",  # "modrinth" | "curseforge" | "both"
     "minecraft_dirs": [],  # manually added Minecraft directories
     "theme": "dark",
+    # Central data-hub keys (used by Mod Browser, Installations, Profiles)
+    "mods_directory": "",        # active mods folder shared across tabs
+    "installed_mods": [],        # list of mod dicts scanned by Installation Manager
+    "current_profile": "",       # name of the currently active profile
 }
 
 

@@ -24,6 +24,7 @@ from PyQt5.QtWidgets import (
 
 from apis.base_api import ModInfo, ModVersion
 from core.mod_manager import ModManager
+from core.event_bus import EventBus
 from config.settings import Settings
 from utils.constants import MC_VERSIONS, MOD_LOADERS
 from utils.logger import get_logger
@@ -109,19 +110,28 @@ class ModBrowserPanel(QWidget):
         self,
         manager: ModManager,
         settings: Settings,
+        event_bus: EventBus = None,
         mods_dir: str = "",
         parent: QWidget = None,
     ) -> None:
         super().__init__(parent)
         self._manager = manager
         self._settings = settings
-        self._mods_dir = mods_dir
+        self._event_bus = event_bus
+        # Prefer explicit mods_dir argument; fall back to persisted setting
+        if not mods_dir:
+            self._mods_dir = self._settings.get("mods_directory", "")
+        else:
+            self._mods_dir = mods_dir
         self._current_mod: Optional[ModInfo] = None
         self._versions: List[ModVersion] = []
         self._search_results: List[ModInfo] = []
         self._threads: List[QThread] = []
         self._workers: List[object] = []  # keep strong refs to prevent GC
         self._build_ui()
+        # React to settings changes emitted by other panels (e.g. Settings tab)
+        if self._event_bus is not None:
+            self._event_bus.settings_changed.connect(self._on_settings_changed)
 
     # ------------------------------------------------------------------
     # Build UI
@@ -335,6 +345,11 @@ class ModBrowserPanel(QWidget):
         d = QFileDialog.getExistingDirectory(self, "Select Mods Directory")
         if d:
             self._mods_dir_edit.setText(d)
+            self._mods_dir = d
+            # Persist to settings so other tabs pick it up
+            self._settings.set("mods_directory", d)
+            if self._event_bus is not None:
+                self._event_bus.settings_changed.emit("mods_directory")
 
     def _do_install(self) -> None:
         idx = self._version_combo.currentIndex()
@@ -392,6 +407,17 @@ class ModBrowserPanel(QWidget):
         self._status_label.setText(msg)
         if ok:
             QMessageBox.information(self, "Install", msg)
+            # Notify other components that a new mod was installed
+            mods_dir = self._mods_dir_edit.text().strip()
+            if self._event_bus is not None and self._current_mod is not None:
+                # Determine the installed filename from the current version selection
+                idx = self._version_combo.currentIndex()
+                filename = self._versions[idx].filename if 0 <= idx < len(self._versions) else ""
+                mod_path = str(mods_dir)
+                self._event_bus.mod_installed.emit(
+                    self._current_mod.name,
+                    mod_path,
+                )
         else:
             QMessageBox.critical(self, "Install", msg)
 
@@ -402,3 +428,11 @@ class ModBrowserPanel(QWidget):
     def set_mods_dir(self, path: str) -> None:
         self._mods_dir = path
         self._mods_dir_edit.setText(path)
+
+    def _on_settings_changed(self, key: str) -> None:
+        """React to settings changes emitted by other panels."""
+        if key == "mods_directory":
+            new_dir = self._settings.get("mods_directory", "")
+            if new_dir and new_dir != self._mods_dir_edit.text():
+                self._mods_dir = new_dir
+                self._mods_dir_edit.setText(new_dir)

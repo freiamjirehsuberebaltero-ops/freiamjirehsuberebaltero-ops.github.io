@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
 
 from core.profile_manager import ModProfile, ProfileManager
 from core.mod_manager import ModManager
+from core.event_bus import EventBus
 from config.settings import Settings
 from utils.constants import MC_VERSIONS, MOD_LOADERS
 from utils.logger import get_logger
@@ -43,15 +44,22 @@ class ProfileManagerPanel(QWidget):
         profile_manager: ProfileManager,
         mod_manager: ModManager,
         settings: Settings,
+        event_bus: EventBus = None,
         parent: QWidget = None,
     ) -> None:
         super().__init__(parent)
         self._pm = profile_manager
         self._mm = mod_manager
         self._settings = settings
+        self._event_bus = event_bus
         self._current_profile: Optional[ModProfile] = None
         self._build_ui()
         self._refresh_profile_list()
+
+        # Wire up event bus signals
+        if self._event_bus is not None:
+            self._event_bus.mods_updated.connect(self._on_mods_updated)
+            self._event_bus.mod_installed.connect(self._on_mod_installed)
 
     # ------------------------------------------------------------------
     # Build UI
@@ -265,8 +273,12 @@ class ProfileManagerPanel(QWidget):
         if not self._current_profile:
             QMessageBox.warning(self, "Install", "No profile loaded.")
             return
+        # Default to the mods_directory from Settings; let user override via dialog
+        default_dir = self._settings.get("mods_directory", "")
         from PyQt5.QtWidgets import QFileDialog
-        mods_dir = QFileDialog.getExistingDirectory(self, "Select Mods Directory")
+        mods_dir = QFileDialog.getExistingDirectory(
+            self, "Select Mods Directory", default_dir
+        )
         if not mods_dir:
             return
 
@@ -326,3 +338,50 @@ class ProfileManagerPanel(QWidget):
         )
         self._load_profile_into_ui(self._current_profile)
         self._status_label.setText(f"Added '{mod_name}' to profile.")
+
+    # ------------------------------------------------------------------
+    # Event bus handlers
+    # ------------------------------------------------------------------
+
+    def _on_mods_updated(self) -> None:
+        """Called when Installation Manager refreshes its mod list.
+
+        Reload the installed-mods list from Settings so the profile view
+        reflects the current state of the mods directory.
+        """
+        logger.debug("mods_updated signal received – refreshing installed mods view")
+        self._refresh_installed_mods_info()
+
+    def _on_mod_installed(self, mod_name: str, mod_path: str) -> None:
+        """Called when Mod Browser installs a new mod.
+
+        Auto-adds a lightweight entry to the currently active profile so
+        users don't have to manually manage profile membership.
+        """
+        import hashlib
+        logger.info(
+            "mod_installed signal received: name=%s path=%s", mod_name, mod_path
+        )
+        if not self._current_profile:
+            return
+        # Build a collision-resistant synthetic ID from the name + path
+        raw = f"{mod_name}:{mod_path}"
+        synthetic_id = "browser_" + hashlib.sha1(raw.encode()).hexdigest()[:12]
+        self._current_profile.add_mod(
+            mod_id=synthetic_id,
+            mod_name=mod_name,
+            version_id="",
+            version_number="",
+            filename="",
+            source="browser",
+        )
+        self._load_profile_into_ui(self._current_profile)
+        self._status_label.setText(f"Auto-added '{mod_name}' to active profile.")
+
+    def _refresh_installed_mods_info(self) -> None:
+        """Update the status label with the count from Settings.installed_mods."""
+        installed = self._settings.get("installed_mods", [])
+        count = len(installed)
+        self._status_label.setText(
+            f"Installed mods (from Installation Manager): {count}"
+        )
