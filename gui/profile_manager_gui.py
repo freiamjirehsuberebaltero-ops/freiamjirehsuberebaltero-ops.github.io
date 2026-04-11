@@ -385,28 +385,64 @@ class ProfileManagerPanel(QWidget):
         skipped = 0
         for mod_entry in self._current_profile.mods:
             source = mod_entry.get("source", "modrinth")
-            # Mods added from the Installation Manager scan or from the Mod Browser
-            # have synthetic local IDs and no remote API representation — skip them.
-            if source not in ("modrinth", "curseforge"):
-                skipped += 1
-                continue
-            mod_id = mod_entry.get("mod_id", "")
-            version_id = mod_entry.get("version_id", "")
-            api = (
-                self._mm._modrinth if source == "modrinth" else self._mm._curseforge
-            )
-            versions = api.get_mod_versions(mod_id, mc_ver, loader)
-            target = next((v for v in versions if v.id == version_id), None)
-            if target is None and versions:
-                target = versions[0]
-            if target:
-                ok = self._mm.install_mod(target, Path(mods_dir))
-                if ok:
-                    installed += 1
+
+            if source in ("modrinth", "curseforge"):
+                # Real API mod — use the stored mod_id to fetch versions directly.
+                mod_id = mod_entry.get("mod_id", "")
+                version_id = mod_entry.get("version_id", "")
+                api = (
+                    self._mm._modrinth if source == "modrinth" else self._mm._curseforge
+                )
+                versions = api.get_mod_versions(mod_id, mc_ver, loader)
+                target = next((v for v in versions if v.id == version_id), None)
+                if target is None and versions:
+                    target = versions[0]
+                if target:
+                    ok = self._mm.install_mod(target, Path(mods_dir))
+                    if ok:
+                        installed += 1
+                    else:
+                        failed += 1
                 else:
                     failed += 1
+
             else:
-                failed += 1
+                # Locally-scanned or browser-installed mod (synthetic ID).
+                # If the .jar still exists on disk, nothing to do.
+                # If it has been deleted, try to re-download via a Modrinth search.
+                filename = mod_entry.get("filename", "")
+                mod_name = mod_entry.get("mod_name", "")
+                if filename and Path(mods_dir, filename).exists():
+                    skipped += 1
+                    continue
+
+                if not mod_name:
+                    # No name to search with — cannot recover.
+                    failed += 1
+                    continue
+
+                try:
+                    search_results = self._mm._modrinth.search_mods(
+                        mod_name, mc_ver, loader
+                    )
+                    target = None
+                    if search_results:
+                        versions = self._mm._modrinth.get_mod_versions(
+                            search_results[0].id, mc_ver, loader
+                        )
+                        if versions:
+                            target = versions[0]
+                except Exception:
+                    target = None
+
+                if target:
+                    ok = self._mm.install_mod(target, Path(mods_dir))
+                    if ok:
+                        installed += 1
+                    else:
+                        failed += 1
+                else:
+                    failed += 1
 
         msg = f"Installed {installed} mod(s)."
         if skipped:
