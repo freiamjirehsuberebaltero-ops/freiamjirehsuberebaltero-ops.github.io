@@ -382,8 +382,14 @@ class ProfileManagerPanel(QWidget):
         loader = self._current_profile.mod_loader
         installed = 0
         failed = 0
+        skipped = 0
         for mod_entry in self._current_profile.mods:
             source = mod_entry.get("source", "modrinth")
+            # Mods added from the Installation Manager scan or from the Mod Browser
+            # have synthetic local IDs and no remote API representation — skip them.
+            if source not in ("modrinth", "curseforge"):
+                skipped += 1
+                continue
             mod_id = mod_entry.get("mod_id", "")
             version_id = mod_entry.get("version_id", "")
             api = (
@@ -403,6 +409,8 @@ class ProfileManagerPanel(QWidget):
                 failed += 1
 
         msg = f"Installed {installed} mod(s)."
+        if skipped:
+            msg += f" {skipped} local mod(s) skipped (already on disk)."
         if failed:
             msg += f" {failed} failed."
         self._status_label.setText(msg)
