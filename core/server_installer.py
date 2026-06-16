@@ -151,11 +151,7 @@ class ServerInstaller:
         if not versions:
             raise ValueError("No NeoForge versions available")
 
-        parts = minecraft_version.split(".")
-        if len(parts) < 2 or not all(p.isdigit() for p in parts[:2]):
-            raise ValueError(f"Unsupported Minecraft version format for NeoForge: {minecraft_version}")
-        major_minor = ".".join(parts[:2])
-        prefix = major_minor[2:] + "." if major_minor.startswith("1.") else f"{major_minor}."
+        prefix = self._build_neoforge_version_prefix(minecraft_version)
         compatible = [v for v in versions if v.startswith(prefix)] or versions
         selected = compatible[-1]
         filename = f"neoforge-{selected}-installer.jar"
@@ -164,3 +160,16 @@ class ServerInstaller:
             f"{selected}/{filename}"
         )
         return url, filename
+
+    @staticmethod
+    def _build_neoforge_version_prefix(minecraft_version: str) -> str:
+        """Map MC version to NeoForge artifact prefix (e.g. 1.20.x -> 20.)."""
+        parts = minecraft_version.split(".")
+        if len(parts) < 2 or not all(p.isdigit() for p in parts[:2]):
+            raise ValueError(
+                f"Unsupported Minecraft version format for NeoForge: {minecraft_version}"
+            )
+        major_minor = ".".join(parts[:2])
+        if major_minor.startswith("1."):
+            return major_minor[2:] + "."
+        return f"{major_minor}."

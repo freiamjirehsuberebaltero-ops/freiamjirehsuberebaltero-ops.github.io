@@ -33,7 +33,7 @@ from utils.constants import MC_VERSIONS, MOD_LOADERS
 from utils.logger import get_logger
 
 logger = get_logger("server_manager_panel")
-CONSOLE_REFRESH_INTERVAL_MS = 1200
+CONSOLE_REFRESH_INTERVAL_MS = 1000
 
 
 class ServerManagerPanel(QWidget):
