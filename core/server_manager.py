@@ -54,6 +54,8 @@ class ServerInstance:
 class ServerManager:
     """Manage server registry and running server processes."""
 
+    MAX_LOG_LINES = 1000
+
     def __init__(self, servers_root: Path, backup_root: Optional[Path] = None) -> None:
         self._servers_root = Path(servers_root)
         self._servers_root.mkdir(parents=True, exist_ok=True)
@@ -191,7 +193,7 @@ class ServerManager:
             return False
 
         self._processes[server.id] = proc
-        self._logs.setdefault(server.id, deque(maxlen=1000))
+        self._logs.setdefault(server.id, deque(maxlen=self.MAX_LOG_LINES))
         self._start_log_reader(server.id, proc)
         server.status = "running"
         server.pid = proc.pid or 0
@@ -339,7 +341,7 @@ class ServerManager:
                 return
             for line in stream:
                 clean = line.rstrip("\n")
-                self._logs.setdefault(server_id, deque(maxlen=1000)).append(clean)
+                self._logs.setdefault(server_id, deque(maxlen=self.MAX_LOG_LINES)).append(clean)
 
         t = threading.Thread(target=_reader, daemon=True)
         t.start()

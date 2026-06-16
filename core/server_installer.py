@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional
 
 import requests
 
@@ -153,8 +151,11 @@ class ServerInstaller:
         if not versions:
             raise ValueError("No NeoForge versions available")
 
-        major_minor = ".".join(minecraft_version.split(".")[:2]).replace("1.", "")
-        prefix = f"{major_minor}."
+        parts = minecraft_version.split(".")
+        if len(parts) < 2 or not all(p.isdigit() for p in parts[:2]):
+            raise ValueError(f"Unsupported Minecraft version format for NeoForge: {minecraft_version}")
+        major_minor = ".".join(parts[:2])
+        prefix = major_minor[2:] + "." if major_minor.startswith("1.") else f"{major_minor}."
         compatible = [v for v in versions if v.startswith(prefix)] or versions
         selected = compatible[-1]
         filename = f"neoforge-{selected}-installer.jar"
