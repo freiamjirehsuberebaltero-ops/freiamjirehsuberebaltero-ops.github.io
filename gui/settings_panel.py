@@ -88,7 +88,35 @@ class SettingsPanel(QWidget):
         self._threads_spin.setRange(1, 16)
         behaviour_form.addRow("Download threads:", self._threads_spin)
 
+        self._server_memory_spin = QSpinBox()
+        self._server_memory_spin.setRange(512, 32768)
+        self._server_memory_spin.setSingleStep(256)
+        behaviour_form.addRow("Default server memory (MB):", self._server_memory_spin)
+
+        self._server_backup_cb = QCheckBox("Back up server configs before save")
+        behaviour_form.addRow(self._server_backup_cb)
+
         root.addWidget(behaviour_group)
+
+        # --- Server Runtime ---
+        server_group = QGroupBox("Server Runtime")
+        server_form = QFormLayout(server_group)
+
+        self._servers_root_edit = QLineEdit()
+        self._servers_root_browse_btn = QPushButton("Browse…")
+        self._servers_root_browse_btn.clicked.connect(self._browse_servers_root)
+        server_root_row = QHBoxLayout()
+        server_root_row.addWidget(self._servers_root_edit, 1)
+        server_root_row.addWidget(self._servers_root_browse_btn)
+        server_root_widget = QWidget()
+        server_root_widget.setLayout(server_root_row)
+        server_form.addRow("Servers root:", server_root_widget)
+
+        self._java_path_edit = QLineEdit()
+        self._java_path_edit.setPlaceholderText("java")
+        server_form.addRow("Java path:", self._java_path_edit)
+
+        root.addWidget(server_group)
 
         # --- Custom Minecraft Directories ---
         dirs_group = QGroupBox("Custom Minecraft Directories")
@@ -154,6 +182,10 @@ class SettingsPanel(QWidget):
         self._backup_cb.setChecked(bool(s.get("backup_before_update", True)))
         self._max_backups_spin.setValue(int(s.get("max_backups", 5)))
         self._threads_spin.setValue(int(s.get("download_threads", 4)))
+        self._server_memory_spin.setValue(int(s.get("default_server_memory_mb", 2048)))
+        self._server_backup_cb.setChecked(bool(s.get("server_auto_backup", True)))
+        self._servers_root_edit.setText(str(s.get("servers_root", "")))
+        self._java_path_edit.setText(str(s.get("java_path", "java")))
 
         self._dirs_list.clear()
         for d in s.get("minecraft_dirs", []):
@@ -174,6 +206,10 @@ class SettingsPanel(QWidget):
                 "backup_before_update": self._backup_cb.isChecked(),
                 "max_backups": self._max_backups_spin.value(),
                 "download_threads": self._threads_spin.value(),
+                "default_server_memory_mb": self._server_memory_spin.value(),
+                "server_auto_backup": self._server_backup_cb.isChecked(),
+                "servers_root": self._servers_root_edit.text().strip(),
+                "java_path": self._java_path_edit.text().strip() or "java",
                 "minecraft_dirs": minecraft_dirs,
             }
         )
@@ -209,3 +245,13 @@ class SettingsPanel(QWidget):
             return
         for item in selected:
             self._dirs_list.takeItem(self._dirs_list.row(item))
+
+    def _browse_servers_root(self) -> None:
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Servers Root Directory",
+            self._servers_root_edit.text().strip(),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks,
+        )
+        if folder:
+            self._servers_root_edit.setText(folder)

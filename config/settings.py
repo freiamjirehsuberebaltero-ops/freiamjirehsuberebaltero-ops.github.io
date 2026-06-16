@@ -10,6 +10,7 @@ from utils.constants import (
     PROFILES_DIR,
     BACKUP_DIR,
     LOGS_DIR,
+    SERVERS_DIR,
 )
 from utils.logger import get_logger
 
@@ -25,6 +26,10 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "download_threads": 4,
     "preferred_api": "modrinth",  # "modrinth" | "curseforge" | "both"
     "minecraft_dirs": [],  # manually added Minecraft directories
+    "servers_root": str(SERVERS_DIR),
+    "java_path": "java",
+    "default_server_memory_mb": 2048,
+    "server_auto_backup": True,
     "theme": "dark",
 }
 
@@ -66,7 +71,7 @@ class Settings:
     # ------------------------------------------------------------------
 
     def _ensure_dirs(self) -> None:
-        for d in (self._config_dir, PROFILES_DIR, BACKUP_DIR, LOGS_DIR):
+        for d in (self._config_dir, PROFILES_DIR, BACKUP_DIR, LOGS_DIR, SERVERS_DIR):
             d.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> None:

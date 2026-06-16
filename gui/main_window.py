@@ -19,11 +19,13 @@ from apis.modrinth_api import ModrinthAPI
 from config.settings import Settings
 from core.mod_manager import ModManager
 from core.profile_manager import ProfileManager
+from core.server_manager import ServerManager
 from gui.installation_manager import InstallationManagerPanel
 from gui.mod_browser import ModBrowserPanel
 from gui.profile_manager_gui import ProfileManagerPanel
+from gui.server_manager import ServerManagerPanel
 from gui.settings_panel import SettingsPanel
-from utils.constants import APP_NAME, APP_VERSION
+from utils.constants import APP_NAME, APP_VERSION, BACKUP_DIR, SERVERS_DIR
 from utils.logger import get_logger
 
 logger = get_logger("main_window")
@@ -55,6 +57,10 @@ class MainWindow(QMainWindow):
             max_backups=self._settings.get("max_backups", 5),
         )
         self._profile_manager = ProfileManager()
+        self._server_manager = ServerManager(
+            servers_root=Path(self._settings.get("servers_root") or SERVERS_DIR),
+            backup_root=BACKUP_DIR / "server_configs",
+        )
 
     # ------------------------------------------------------------------
     # Build UI
@@ -80,6 +86,14 @@ class MainWindow(QMainWindow):
             settings=self._settings,
         )
         self._tabs.addTab(self._install_panel, "🎮 Installations")
+
+        # Server Manager tab
+        self._server_panel = ServerManagerPanel(
+            manager=self._server_manager,
+            settings=self._settings,
+        )
+        self._server_panel.mods_dir_selected.connect(self._browser_panel.set_mods_dir)
+        self._tabs.addTab(self._server_panel, "🖥 Servers")
 
         # Profile Manager tab
         self._profile_panel = ProfileManagerPanel(

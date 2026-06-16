@@ -12,6 +12,10 @@ A cross-platform desktop application for browsing, installing, updating, and man
 - **Dependency Resolution** — Automatically identifies and installs required mod dependencies.
 - **Compatibility Checking** — Warns you when a mod doesn't support your selected Minecraft version or loader.
 - **Profile Management** — Save named mod collections (profiles) tied to a specific Minecraft version and loader. Import and export profiles as JSON files.
+- **Server Management** — Manage multiple Minecraft servers from one UI with create/import, start/stop/restart, status, and live console output.
+- **Server Installers** — Create server instances and install server binaries for Vanilla, Paper, Purpur, Fabric, Forge, and NeoForge.
+- **In-app Config Editor** — Edit common server config files directly in the app with backup snapshots before save.
+- **Manual Server Import** — Register an existing server folder from disk without moving files.
 - **Automatic Backups** — Creates timestamped backups of mods before updates or removals, with configurable retention.
 - **Dark Theme UI** — Clean, dark-themed PyQt5 interface with tabbed navigation.
 - **Cross-platform** — Runs on Windows, macOS, and Linux with platform-appropriate config directories.
@@ -125,6 +129,16 @@ Settings can also be changed at runtime from the **⚙ Settings** tab.
 2. Enter a search term and optionally filter by Minecraft version and mod loader.
 3. Select a mod from the results list to view details and available versions.
 4. Choose a version and click **Install** to download it to your mods folder.
+
+### Managing Servers
+
+Use the **🖥 Servers** tab to:
+- Create a new server instance and install a server binary.
+- Import an existing server folder manually.
+- Start, stop, and restart a selected server.
+- View live console output.
+- Edit config files like `server.properties`, `eula.txt`, and files under `config/`.
+- Set selected server `mods/` folder as the active Mod Browser install target.
 
 ### Managing Installations
 

@@ -25,6 +25,7 @@ CONFIG_DIR = APP_DIR / "config"
 PROFILES_DIR = APP_DIR / "profiles"
 BACKUP_DIR = APP_DIR / "backups"
 LOGS_DIR = APP_DIR / "logs"
+SERVERS_DIR = APP_DIR / "servers"
 
 # ------------------------------------------------------------------
 # Supported Minecraft versions
